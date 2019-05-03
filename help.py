@@ -103,6 +103,8 @@ def getMenuReply():
     return mark
 
 
+# shit
+
 menu_reply_markup = getMenuReply()
 
 text_in_buttons = []
