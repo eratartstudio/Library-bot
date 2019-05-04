@@ -17,6 +17,7 @@ class User(mongoengine.Document):
     phone = mongoengine.StringField()
     need_to_notify = mongoengine.BooleanField(default=True)
     notified = mongoengine.BooleanField(default=False)
+    books = mongoengine.ListField(mongoengine.ReferenceField('Book', reverse_delete_rule=mongoengine.DO_NOTHING))
     # orders = mongoengine.StringField()
     self_url = mongoengine.StringField()
     time_started = mongoengine.DateTimeField(default=datetime.datetime.now())

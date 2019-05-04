@@ -1,6 +1,6 @@
 from aiogram import types
 
-from models import Review
+from models import Review, Autor, User
 
 start_message = '''
 Привет!🖖 Я бот который сделан для таких людей как ты, людей которые любят читать 📚 Расскажи мне какие книги ты уже прочитал и твои самые любимые жанры 😉 
@@ -14,7 +14,7 @@ pre_text_review = '''
 '''
 
 pre_text_solo_review = '''
-{}. {}
+{}
 Оценка {}/10 ({}) отзывов
 Оцени по этому критерию от 1 до 10
 '''
@@ -33,17 +33,17 @@ def get_max_mark(marks):
 
 def get_solo_review_text(review: Review):
     mark, maxcount = get_max_mark(review.mark)
-    pre_text_solo_review.format(review.type, review.text, mark, maxcount)
-    return pre_text_solo_review
+    m = pre_text_solo_review.format(review.text, mark, maxcount)
+    return m
 
 
 def get_reviews_text():
     mes = pre_text_review
-    i = 1
+    i = 0
     query = Review.objects(type=i)
 
     while (list(query) != []):
-        mes += f'\n{i}. {query[0].text}'
+        mes += f'\n{query[0].text}'
         i += 1
         query = Review.objects(type=i)
         # print(i,query)
@@ -103,9 +103,57 @@ def getMenuReply():
     return mark
 
 
-# shit
-
 menu_reply_markup = getMenuReply()
+
+
+def get_review_type_markup(book):
+    reviews = Review.objects(book=book)
+    mark = inK()
+    for x in range(1, len(reviews) + 1):
+        mark.row(inB(str(x), data=str(x)))
+    # print(mark.__dict__)
+    return mark
+
+
+def get_authors_markup(count, autorlist):
+    mark = inK()
+    for i, autor in enumerate(autorlist[count:count + 8]):
+        mark.row(inB('{}. {} {} {}'.format(i + 1, autor.name, autor.patronymic, autor.surname), data=str(autor.id)))
+
+    mark.row(inB('>>', data=f'page_{count + 8}'))
+    mark.row(inB('X', data='start'))
+    return mark
+
+
+def get_books_from_collection(count, u: User):
+    mark = inK()
+    for i, book in enumerate(u.books[count:count + 8]):
+        mark.row(inB('{}. {}'.format(i + 1, book.article), data=str(book.id)))
+
+    mark.row(inB('>>', data=f'page_{count + 8}'))
+    mark.row(inB('X', data='start'))
+    return mark
+
+
+def get_books_of_autor(count, aut: Autor):
+    mark = inK()
+    for i, book in enumerate(aut.books[count:count + 8]):
+        mark.row(inB('{}. {}'.format(i + 1, book.article), data=str(book.id)))
+
+    mark.row(inB('>>', data=f'page_{count + 8}'))
+    mark.row(inB('X', data='start'))
+    return mark
+
+
+def get_review_from_ten_markup():
+    mark = inK()
+    for x in range(1, 11):
+        mark.row(inB(str(x), data=str(x)))
+
+    return mark
+
+
+review_from_ten_markup = get_review_from_ten_markup()
 
 text_in_buttons = []
 

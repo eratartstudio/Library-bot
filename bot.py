@@ -42,6 +42,10 @@ class AuthorState(StatesGroup):
     get_author_command = State()
     get_book_command = State()
     get_review_state = State()
+    get_out_of_ten_state = State()
+
+    watching_collection = State()
+    new_action = State()
 
 
 def pseudo_message(user_id, text=None, mes_id=None, data=None):
@@ -74,6 +78,14 @@ async def start_command_func(msg: [types.Message, types.CallbackQuery]):
     await s(u_id, start_message, reply_markup=menu_reply_markup)
 
 
+async def send_books_in_collection(u: User):
+    if len(u.books) == 0:
+        await s(u.user_id, 'Ваша полка пуста!')
+    else:
+        await s(u.user_id, 'На вашей полке стоят книги:', reply_markup=get_books_from_collection(0, u))
+        await AuthorState.watching_collection.set()
+
+
 @dp.message_handler(lambda m: m.text in text_in_buttons, state=AuthorState.start)
 async def handle_buttons(msg: types.Message):
     u_id = msg.from_user.id
@@ -88,7 +100,7 @@ async def handle_buttons(msg: types.Message):
         pass
 
     elif text == text_in_buttons[2]:
-        pass
+        await send_books_in_collection(u)
 
     elif text == text_in_buttons[3]:
         pass
@@ -133,7 +145,7 @@ def get_autor_list(text):
 
 
 @dp.message_handler(state=AuthorState.name_or_surname)
-async def get_author_by_name(msg: types.Message):
+async def get_author_by_name(msg: types.Message, state: FSMContext):
     u_id = msg.from_user.id
     autorlist = get_autor_list(msg.text)
     mark = inK()
@@ -142,62 +154,110 @@ async def get_author_by_name(msg: types.Message):
         await s(u_id, 'Подобного автора не найдено')
         return
 
+    async with state.proxy() as data:
+        data['autorlist'] = autorlist
+
     txt = get_list_of_authors(0, autorlist)
     await AuthorState.next()
-    mark.row(inB('>>', data=f'{msg.text}_8'))
-    mark.row(inB('X', data='start'))
-    await s(u_id, txt, reply_markup=mark)
+
+    await s(u_id, 'Авторы:', reply_markup=get_authors_markup(0, autorlist))
+
+
+@dp.callback_query_handler(lambda c: 'page_' in c.data, state=AuthorState.get_author_command)
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    count = int(c.data.replace('page_', ''))
+    async with state.proxy() as data:
+
+        autorlist = data['autorlist']
+
+        if count > len(autorlist):
+            await bot.answer_callback_query(c.id, 'Это последняя страница', show_alert=True)
+            return
+        else:
+            await bot.answer_callback_query(c.id, 'Переход к следующей странице')
+
+        await bot.edit_message_reply_markup(c.from_user.id, c.message.message_id,
+                                            reply_markup=get_authors_markup(count, autorlist))
 
 
 @dp.callback_query_handler(state=AuthorState.get_author_command)
-async def get_author_by_name(c: types.CallbackQuery):
-    text, count = c.data.split('_')
-    count = int(count)
-    autorlist = get_autor_list(text)
-
-    if count > len(autorlist):
-        await bot.answer_callback_query(c.id, 'Это последняя страница', show_alert=True)
-        return
-    else:
-        await bot.answer_callback_query(c.id, 'Переход к следующей странице')
-
-    mark = inK()
-
-    txt = get_list_of_authors(count, autorlist)
-
-    mark.row(inB('>>', data=f'{text}_{count + 8}'))
-
-    mark.row(inB('X', data='start'))
-
-    await bot.edit_message_text(txt, c.from_user.id, c.message.message_id)
-    await bot.edit_message_reply_markup(c.from_user.id, c.message.message_id, reply_markup=mark)
-
-
-@dp.message_handler(state=AuthorState.get_author_command)
-async def get_author_by_name(msg: types.Message, state: FSMContext):
-    autor_id = msg.text.replace('/autor_', '')
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    autor_id = c.data
     aut = Autor.objects(id=autor_id)[0]
 
     async with state.proxy() as data:
         data['autor'] = aut
 
     txt = get_list_of_books(0, aut)
-    await s(msg.from_user.id, txt)
-    await AuthorState.next()
+    await bot.edit_message_text('Выберите книгу', c.from_user.id, c.message.message_id,
+                                reply_markup=get_books_of_autor(0, aut))
+    await AuthorState.get_book_command.set()
 
 
-@dp.message_handler(state=AuthorState.get_book_command)
-async def get_author_by_name(msg: types.Message, state: FSMContext):
-    book_id = msg.text.replace('/book_', '')
+@dp.callback_query_handler(lambda c: 'page_' in c.data, state=AuthorState.watching_collection)
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    count = int(c.data.replace('page_', ''))
+    u = get_user(c.from_user.id)
+
+    if count > len(u.books):
+        await bot.answer_callback_query(c.id, 'Это последняя страница', show_alert=True)
+        return
+    else:
+        await bot.answer_callback_query(c.id, 'Переход к следующей странице')
+
+    await bot.edit_message_reply_markup(c.from_user.id, c.message.message_id,
+                                        reply_markup=get_books_from_collection(count, u))
+
+
+@dp.callback_query_handler(lambda c: 'page_' in c.data, state=AuthorState.get_book_command)
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    count = int(c.data.replace('page_', ''))
+    async with state.proxy() as data:
+
+        aut = data['autor']
+
+        if count > len(aut.books):
+            await bot.answer_callback_query(c.id, 'Это последняя страница', show_alert=True)
+            return
+        else:
+            await bot.answer_callback_query(c.id, 'Переход к следующей странице')
+
+        await bot.edit_message_reply_markup(c.from_user.id, c.message.message_id,
+                                            reply_markup=get_books_of_autor(count, aut))
+
+
+@dp.callback_query_handler(state=AuthorState.get_book_command)
+async def get_book_command(c: types.CallbackQuery, state: FSMContext):
+    book_id = c.data
     book = get_book(book_id)
     async with state.proxy() as data:
         data['book'] = book
-    mark = inK()
-    # coding reply function is in process
-    mark.row(inB('>>', data=f'{book_id}_8'))
-    mark.row(inB('X', data='start'))
+        u = get_user(c.from_user.id)
+        if book not in u.books:
+            u.books.append(book)
+            u.update(books=u.books)
+        else:
+            await s(c.from_user.id, 'Книга уже на вашей полке, поэтому она не будет добавлена!')
+
     txt = get_reviews_text()
-    await s(msg.from_user.id, txt, reply_markup=mark)
+    await AuthorState.get_review_state.set()
+    await bot.edit_message_text(txt, c.from_user.id, c.message.message_id, reply_markup=get_review_type_markup(book))
+
+
+@dp.callback_query_handler(state=AuthorState.get_review_state)
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    try:
+        await bot.answer_callback_query(c.id, 'Критерий выбран')
+    except:
+        pass
+    review_type = int(c.data)
+    async with state.proxy() as data:
+        review = Review.objects(book=data['book'], type=review_type - 1)[0]
+        data['review'] = review
+
+        await bot.edit_message_text(get_solo_review_text(review), c.from_user.id, c.message.message_id,
+                                    reply_markup=review_from_ten_markup)
+
     await AuthorState.next()
 
 
@@ -206,14 +266,34 @@ async def get_author_by_name(msg: types.Message, state: FSMContext):
     if msg.text.isnumeric():
         u_id = msg.from_user.id
         async with state.proxy() as data:
-            review = Review.objects(book=data['book'], type=int(msg.text))
+            review = Review.objects(book=data['book'], type=int(msg.text) - 1)[0]
             data['review'] = review
 
-            await s(u_id, get_solo_review_text(review))
+            await s(u_id, get_solo_review_text(review), reply_markup=review_from_ten_markup)
 
-        await AuthorState.next()
+        await AuthorState.get_out_of_ten_state.set()
+        print('next')
     else:
         await s(msg.from_user.id, 'Введите число')
+
+
+@dp.callback_query_handler(state=AuthorState.get_out_of_ten_state)
+async def get_author_by_name(c: types.CallbackQuery, state: FSMContext):
+    try:
+        await bot.answer_callback_query(c.id, 'Оценка выбрана')
+    except:
+        pass
+    u_id = c.from_user.id
+    mark = int(c.data)
+    async with state.proxy() as data:
+        review = data['review']
+        review.mark[mark] += 1
+        review.update(mark=review.mark)
+        data['review'] = review
+
+        await bot.edit_message_text('Оценка книги завершена', c.from_user.id, c.message.message_id)
+
+    await AuthorState.start.set()
 
 
 def get_book(u_id):
