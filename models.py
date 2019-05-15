@@ -54,6 +54,7 @@ class Autor(mongoengine.Document):
     name = mongoengine.StringField()
     surname = mongoengine.StringField()
     patronymic = mongoengine.StringField()  # Отчество
-    books = mongoengine.ListField(mongoengine.ReferenceField(Book), reverse_delete_rule=mongoengine.CASCADE)
+    books = mongoengine.ListField(mongoengine.ReferenceField(Book, reverse_delete_rule=mongoengine.CASCADE),
+                                  reverse_delete_rule=mongoengine.DO_NOTHING)
     url_litres = mongoengine.StringField()
     url_bookmate = mongoengine.StringField()
