@@ -29,6 +29,7 @@ class Review(mongoengine.Document):
     text = mongoengine.StringField()
     book = mongoengine.ReferenceField('Book', reverse_delete_rule=mongoengine.DO_NOTHING)
     mark = mongoengine.ListField(default=[0 for x in range(11)])
+    voted = mongoengine.DictField()
 
 
 class Book(mongoengine.Document):

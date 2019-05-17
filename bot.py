@@ -17,8 +17,6 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, loop=loop, storage=storage)
 s = bot.send_message
 
-chat = -1001410410976
-
 # file_ids = {'files.jpg': None, 'answers.jpg': None, 'statistics.jpg': None}
 
 # bot.get_updates()
@@ -37,7 +35,7 @@ async def cont(msg: types.Message):
 
 class AuthorState(StatesGroup):
     start = State()
-    add_book_root = State()
+    book_root = State()
     ask = State()
     name_or_surname = State()
     get_author_command = State()
@@ -49,7 +47,7 @@ class AuthorState(StatesGroup):
     get_book_name = State()
 
     watching_collection = State()
-    new_action = State()
+    action_menu = State()
 
 
 def pseudo_message(user_id, text=None, mes_id=None, data=None):
@@ -76,8 +74,6 @@ async def start_callback(c: types.CallbackQuery):
 async def start_command_func(msg: [types.Message, types.CallbackQuery]):
     u_id = msg.from_user.id
     get_or_add_user(msg)
-    # print("start from user ", u.username)
-    # print(msg.get_args())
     await AuthorState.start.set()
     await s(u_id, start_message, reply_markup=menu_reply_markup)
 
@@ -87,7 +83,6 @@ async def send_books_in_collection(u: User):
         await s(u.user_id, 'Ваша полка пуста!')
     else:
         await s(u.user_id, 'На вашей полке стоят книги:', reply_markup=get_books_from_collection(0, u))
-        await AuthorState.watching_collection.set()
 
 
 @dp.message_handler(lambda m: m.text in ['Назад', '❌️ Закончить', ], state=AuthorState.all_states)
@@ -95,31 +90,39 @@ async def back(m: types.Message, state: FSMContext):
     await bot.delete_message(m.from_user.id, m.message_id - 1)
 
     await bot.delete_message(m.from_user.id, m.message_id)
-    # await s(msg.from_user.id, '')
     await start_command_func(m)
 
 
-@dp.message_handler(lambda m: m.text in text_in_main, state=[AuthorState.start, AuthorState.get_book_command])
+@dp.message_handler(lambda m: m.text in text_in_main,
+                    state=[AuthorState.start, AuthorState.get_book_command, AuthorState.book_root])
 async def main_menu(msg: types.Message, state: FSMContext):
     u_id = msg.from_user.id
     u = get_user(u_id)
     text = msg.text
     async with state.proxy() as data:
-        data['need_to_add'] = False
-
         if text == text_in_main[0]:
-            await AuthorState.add_book_root.set()
+            await AuthorState.book_root.set()
             data['need_to_add'] = True
+            data['actions_menu'] = False
 
             await s(u_id, add_book_start, reply_markup=menu_add_book_markup)
             # u.update(step='get_author_name')
 
         elif text == text_in_main[1]:
-            await AuthorState.get_book_name.set()
-            await s(u_id, 'Напишите название книги')
-            data['already_in_search'] = False
+            await AuthorState.book_root.set()
+            data['need_to_add'] = False
+            data['actions_menu'] = True
+            await s(u_id, add_book_start, reply_markup=menu_add_book_markup)
+
+            # await AuthorState.get_book_name.set()
+            # await s(u_id, 'Напишите название книги')
+            # data['already_in_search'] = False
 
         elif text == text_in_main[2]:
+            data['need_to_add'] = False
+            data['actions_menu'] = True
+            await AuthorState.get_book_command.set()
+            # await s(u_id, add_book_start, reply_markup=menu_add_book_markup)
             await send_books_in_collection(u)
 
         elif text == text_in_main[3]:
@@ -128,12 +131,13 @@ async def main_menu(msg: types.Message, state: FSMContext):
             pass
 
 
-@dp.message_handler(lambda m: m.text in text_in_add_book, state=AuthorState.add_book_root)
-async def add_book_root_menu(msg: types.Message, state: FSMContext):
+@dp.message_handler(lambda m: m.text in text_in_add_book, state=AuthorState.book_root)
+async def book_root_menu(msg: types.Message, state: FSMContext):
     u_id = msg.from_user.id
     u = get_user(u_id)
     text = msg.text
-    print(f'text : {text} state : get_book_command or add_book_root')
+    # print(f'text : {text} state : get_book_command or book_root')
+
     if text == text_in_add_book[0]:
         await AuthorState.name_or_surname.set()
         await s(u_id, get_name_message, reply_markup=simple_markup_back_end)
@@ -160,10 +164,10 @@ async def add_book_root_menu(msg: types.Message, state: FSMContext):
 @dp.message_handler(state=AuthorState.get_book_name)
 async def handle_buttons(msg: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        if data['need_to_add']:
-            await AuthorState.get_book_command.set()
-        else:
-            await AuthorState.new_action.set()
+        # if data['need_to_add']:
+        await AuthorState.get_book_command.set()
+        # else:
+        #     await AuthorState.new_action.set()
 
         u_id = msg.from_user.id
         if not data['already_in_search']:
@@ -185,15 +189,6 @@ async def paging_books_in_searching_by_name(c: types.CallbackQuery, state: FSMCo
         book_name = data['book_name']
         mark = get_books_by_name(count, book_name)
         await bot.edit_message_reply_markup(c.from_user.id, c.message.message_id, reply_markup=mark)
-
-
-@dp.callback_query_handler(state=AuthorState.get_book_name)
-async def get_book_from_page(c: types.CallbackQuery, state: FSMContext):
-    book_id = c.data
-    book = Book.objects(id=book_id)[0]
-    await AuthorState.get_book_command.set()
-    await bot.edit_message_text('Выбранная книга: {}\n Автор:{}'.format(book.article, book.autor.surname),
-                                c.from_user.id, c.message.message_id, reply_markup=inline_markup_with_actions)
 
 
 @dp.message_handler(commands=['addReview'])
@@ -241,7 +236,6 @@ async def get_author_by_name(msg: types.Message, state: FSMContext):
     u_id = msg.from_user.id
 
     autorlist = get_autor_list(msg.text)
-    mark = inK()
 
     if len(autorlist) == 0:
         await s(u_id, 'Подобного автора не найдено')
@@ -250,9 +244,7 @@ async def get_author_by_name(msg: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['autorlist'] = autorlist
 
-    txt = get_list_of_authors(0, autorlist)
-    await AuthorState.next()
-
+    await AuthorState.get_author_command.set()
     await s(u_id, 'Авторы:', reply_markup=get_authors_markup(0, autorlist))
 
 
@@ -325,33 +317,49 @@ async def get_book_command(c: types.CallbackQuery, state: FSMContext):
         data['book'] = book
         data['autor'] = book.autor
 
-    await new_book_or_review(u, c, book)
+        await new_book_or_review(u, c, book, need_to_add=data['need_to_add'], actions=data['actions_menu'])
 
 
-async def new_book_or_review(u: User, c: [types.Message, types.CallbackQuery], book: Book, need_to_add=True):
-    if need_to_add:
-        txt = get_add_book_text()
-    else:
-        txt = get_reviews_text()
-    await AuthorState.get_review_state.set()
+async def new_book_or_review(u: User, c: [types.Message, types.CallbackQuery], book: Book, need_to_add=True,
+                             actions=False):
     if type(c) == types.CallbackQuery:
         await bot.delete_message(c.from_user.id, c.message.message_id)
 
-    if need_to_add:
-        if book not in u.books:
-            # callback_text = 'Книга добавлена'
-            u.books.append(book)
-            u.update(books=u.books)
+    if actions:
+        await AuthorState.action_menu.set()
+        await s(c.from_user.id, book_done,
+                reply_markup=inline_markup_with_actions)
+        pass
 
+    else:
+
+        if need_to_add:
+            txt = get_add_book_text()
         else:
-            callback_text = 'Книга уже на вашей полке, поэтому она не будет добавлена!'
+            txt = get_reviews_text()
+        await AuthorState.get_review_state.set()
 
-            await s(c.from_user.id, callback_text)
+        if need_to_add:
+            if book not in u.books:
+                # callback_text = 'Книга добавлена'
+                u.books.append(book)
+                u.update(books=u.books)
 
-    await s(c.from_user.id, txt,
-            reply_markup=get_simple_markup_on_criteria())
+            else:
+                callback_text = 'Книга уже на вашей полке, поэтому она не будет добавлена!'
 
-    # await bot.edit_message_reply_markup(c.from_user.id,mes.message_id,reply_markup=get_review_type_markup(book))
+                await s(c.from_user.id, callback_text)
+
+        await s(c.from_user.id, txt,
+                reply_markup=get_simple_markup_on_criteria())
+
+
+@dp.callback_query_handler(state=AuthorState.action_menu)
+async def action_menu(c: types.CallbackQuery, state: FSMContext):
+    u_id = c.from_user.id
+    msg_id = c.message.message_id
+    if c.data == 'go_into_conversation':
+        await bot.edit_message_text('Идет поиск собеседника...', u_id, msg_id)
 
 
 @dp.message_handler(state=AuthorState.get_review_state)
@@ -361,21 +369,28 @@ async def get_author_by_name(msg: types.Message, state: FSMContext):
         await s(msg.from_user.id, 'Не работает')
         pass
     elif msg.text == '✍️ Написать свой':
-        # reviews = Review.objects(book=data['book'])
         await s(msg.from_user.id, 'Не работает')
 
         pass
     elif msg.text == '🎓 Добавить книгу':
-        # callback_text = None
-        # print('add_book_root_menu 364')
-
         await main_menu(msg, state)
+
     elif msg.text.isnumeric():
         async with state.proxy() as data:
-
-            # await bot.answer_callback_query(c.id, 'Критерий выбран')
             review_type = int(msg.text)
-            review = Review.objects(book=data['book'], type=review_type - 1)[0]
+            review = Review.objects(book=data['book'], type=review_type - 1)
+            if not list(review):
+                await s(msg.from_user.id, 'Выберите корректный критерий')
+                return
+
+            review = review[0]
+
+            print(review.voted)
+            if str(msg.from_user.id) in review.voted:
+                await s(msg.from_user.id,
+                        f'Вы уже оценили книгу по этому критерию. Ваша оценка: *{review.voted[str(msg.from_user.id)]}*',
+                        parse_mode='Markdown')
+                return
             data['review'] = review
 
             await s(msg.from_user.id, get_solo_review_text(review),
@@ -409,7 +424,8 @@ async def get_author_by_name(msg: types.Message, state: FSMContext):
     async with state.proxy() as data:
         review = data['review']
         review.mark[mark] += 1
-        review.update(mark=review.mark)
+        review.voted[str(msg.from_user.id)] = mark
+        review.update(mark=review.mark, voted=review.voted)
         data['review'] = review
 
         await new_book_or_review(u=get_user(u_id), c=msg, book=data['book'], need_to_add=False)

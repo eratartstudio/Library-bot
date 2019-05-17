@@ -24,6 +24,8 @@ pre_text_solo_review = '''
 
 add_book_start = 'Добавь книгу по Автору или Названию'
 
+book_done = 'Книга выбрана. Что хотите сделать?'
+
 
 def get_max_mark(marks):
     maxcount = 0
@@ -68,7 +70,6 @@ def get_reviews_text():
         # print(i,query)
     mes += '\nВыбери критерий для оценки'
     return mes
-
 
 
 def get_list_of_authors(count, autors):
@@ -130,6 +131,7 @@ def getMenuReply():
     mark.row(simple_button('🎓 Добавить книгу'), simple_button('📔 Узнать о книге'))
     mark.row(simple_button('📚 Моя библиотека'), simple_button('💬 Помощь'))
     return mark
+
 
 menu_reply_markup = getMenuReply()
 menu_add_book_markup = getAddBookReply()
